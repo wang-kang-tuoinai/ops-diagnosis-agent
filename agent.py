@@ -1,13 +1,22 @@
 import json
+import os
 from collections.abc import Sequence
-from tools import available_functions, tools
+
 from openai import OpenAI
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessageFunctionToolCallParam,
     ChatCompletionMessageParam,
 )
-import os
+
+from tools import available_functions, tools
+
+# ---- 可调参数 ----
+MODEL = "deepseek-v4-flash"
+BASE_URL = "https://api.deepseek.com"
+SYSTEM_PROMPT = "你是一个helpful的助手"
+MAX_ITERATIONS = 5  # 单轮对话里，模型最多连续请求几次工具调用
+KEEP_TURNS = 2  # 每次请求前，保留最近几轮完整对话
 
 
 class DeepSeekAssistantMessageParam(ChatCompletionAssistantMessageParam, total=False):
@@ -19,13 +28,19 @@ class DeepSeekAssistantMessageParam(ChatCompletionAssistantMessageParam, total=F
     reasoning_content: str
 
 
-client = OpenAI(
-    api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com"
-)
+def create_client() -> OpenAI:
+    """创建 DeepSeek 客户端。缺少 API key 时尽早报错，而不是等到发请求。"""
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "环境变量 DEEPSEEK_API_KEY 未设置，无法创建客户端。"
+            "请先设置后再运行，例如：$env:DEEPSEEK_API_KEY='sk-xxx'"
+        )
+    return OpenAI(api_key=api_key, base_url=BASE_URL)
 
 
 # 执行工具调用
-def execute_tool_call(tool_call):
+def execute_tool_call(tool_call: ChatCompletionMessageFunctionToolCallParam) -> str:
     func_name = tool_call["function"]["name"]
     try:
         func_args = json.loads(tool_call["function"]["arguments"])
@@ -41,13 +56,6 @@ def execute_tool_call(tool_call):
         return f"执行出错: {e}"
 
 
-messages: list[ChatCompletionMessageParam] = [
-    {"role": "system", "content": "你是一个helpful的助手"}
-]
-# 模型工具调用的最大迭代次数
-MAX_ITERATIONS = 5
-print("对话开始,输入quit退出对话")
-
 def split_into_turns(
     messages: Sequence[ChatCompletionMessageParam],
 ) -> list[list[ChatCompletionMessageParam]]:
@@ -56,7 +64,7 @@ def split_into_turns(
     turns: list[list[ChatCompletionMessageParam]] = []
     current: list[ChatCompletionMessageParam] = []
     for msg in messages:
-        if msg["role"]=="user" and current:
+        if msg["role"] == "user" and current:
             turns.append(current)
             current = []
         current.append(msg)
@@ -64,18 +72,19 @@ def split_into_turns(
         turns.append(current)
     return turns
 
+
 def truncate_messages(
     messages: Sequence[ChatCompletionMessageParam], keep_turns: int
 ) -> list[ChatCompletionMessageParam]:
     """保留System消息+最近keep_turns轮完整对话"""
     system_msgs: list[ChatCompletionMessageParam] = [
-        m for m in messages if m["role"]=="system"
+        m for m in messages if m["role"] == "system"
     ]
     # 单独拦掉 keep_turns<=0：切片 turns[-0:] 等价于 turns[0:]，
     # 会保留全部历史，跟"一轮都不留"的语义正好相反
     if keep_turns <= 0:
         return system_msgs
-    rest = [m for m in messages if m["role"]!="system"]
+    rest = [m for m in messages if m["role"] != "system"]
     turns = split_into_turns(rest)
     kept = turns[-keep_turns:]
     result: list[ChatCompletionMessageParam] = list(system_msgs)
@@ -84,19 +93,25 @@ def truncate_messages(
     return result
 
 
+def run_turn(
+    client: OpenAI,
+    messages: Sequence[ChatCompletionMessageParam],
+    user_input: str,
+    *,
+    model: str = MODEL,
+    max_iterations: int = MAX_ITERATIONS,
+) -> list[ChatCompletionMessageParam]:
+    """跑完一轮对话：注入 user 消息 → 工具调用循环 → 拿到最终回答。
 
-while True:
-    user_input = input("你: ")
-    if user_input.lower() == "quit":
-        print("对话结束。")
-        break
-    messages = truncate_messages(messages,2)
-    messages.append({"role": "user", "content": user_input})
+    返回追加了本轮所有消息的新列表，不会修改传进来的 messages。
+    """
+    history: list[ChatCompletionMessageParam] = list(messages)
+    history.append({"role": "user", "content": user_input})
 
-    for i in range(MAX_ITERATIONS):
+    for _ in range(max_iterations):
         stream = client.chat.completions.create(
-            model="deepseek-v4-flash",
-            messages=messages,
+            model=model,
+            messages=history,
             stream=True,
             tools=tools,  # 传入工具定义
             tool_choice="auto",  # 让模型自行决定是否调用
@@ -154,7 +169,7 @@ while True:
                 usage = chunk.usage
 
         if not collected_tool_calls:
-            # 说明模型没有调用工具,直接返回对话
+            # 说明模型没有调用工具,本轮结束
             print()
             if usage:
                 print("本次消耗", usage.total_tokens, "tokens")
@@ -164,13 +179,12 @@ while True:
             }
             if collected_reason:
                 final_message["reasoning_content"] = collected_reason
-            messages.append(final_message)
-            break
+            history.append(final_message)
+            return history
 
         # 走到这里,说明有工具调用
-        print(
-            f"\ntool_call: 模型请求调用工具:{[call["function"]["name"] for call in collected_tool_calls]}"
-        )
+        called = [call["function"]["name"] for call in collected_tool_calls]
+        print(f"\ntool_call: 模型请求调用工具:{called}")
 
         # 构造消息
         assistant_message: DeepSeekAssistantMessageParam = {
@@ -181,14 +195,35 @@ while True:
         }
 
         # 把模型请求工具调用的消息添加到消息列表
-        messages.append(assistant_message)
+        history.append(assistant_message)
 
         # 依次执行工具调用
         for tc in collected_tool_calls:
             result = execute_tool_call(tc)
             print(f"  - 调用 {tc['function']['name']}，结果: {result}")
-            messages.append(
+            history.append(
                 {"role": "tool", "tool_call_id": tc["id"], "content": result}
             )
-    else:
-        print(f"\n[警告] 达到最大迭代次数 {MAX_ITERATIONS},强制中止")
+
+    print(f"\n[警告] 达到最大迭代次数 {max_iterations},强制中止")
+    return history
+
+
+def main() -> None:
+    client = create_client()
+    messages: list[ChatCompletionMessageParam] = [
+        {"role": "system", "content": SYSTEM_PROMPT}
+    ]
+    print("对话开始,输入quit退出对话")
+
+    while True:
+        user_input = input("你: ")
+        if user_input.lower() == "quit":
+            print("对话结束。")
+            break
+        messages = truncate_messages(messages, KEEP_TURNS)
+        messages = run_turn(client, messages, user_input)
+
+
+if __name__ == "__main__":
+    main()

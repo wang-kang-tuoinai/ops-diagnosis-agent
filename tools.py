@@ -7,7 +7,25 @@ from openai.types.chat import ChatCompletionFunctionToolParam
 # pyrefly: ignore [missing-import]
 from tavily import TavilyClient
 
-tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+_tavily_client: TavilyClient | None = None
+
+
+def get_tavily_client() -> TavilyClient:
+    """惰性创建 Tavily 客户端，首次真正搜索时才初始化。
+
+    缺 key 时抛 RuntimeError，由 search_web 捕获后转成给模型看的错误信息——
+    搜索只是三个工具之一，不该因为它没配好就让整个 agent 起不来。
+    """
+    global _tavily_client
+    if _tavily_client is None:
+        api_key = os.getenv("TAVILY_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "环境变量 TAVILY_API_KEY 未设置，无法使用联网搜索。"
+                "请先设置后再运行，例如：$env:TAVILY_API_KEY='tvly-xxx'"
+            )
+        _tavily_client = TavilyClient(api_key=api_key)
+    return _tavily_client
 
 # 安全计算器：基于 ast 模块，只允许加减乘除四则运算
 def calculate(expression: str) -> str:
@@ -96,7 +114,7 @@ def search_web(query: str) -> str:
     """供大模型调用的联网搜索工具"""
     print(f"\n[系统提示: 正在用 Tavily 搜索 -> {query}]")
     try:
-        search_result = tavily_client.search(query, max_results=3)
+        search_result = get_tavily_client().search(query, max_results=3)
         # 将结果转为 JSON 字符串返回给模型
         return json.dumps(search_result['results'], ensure_ascii=False)
     except Exception as e:
