@@ -108,7 +108,13 @@ while True:
             print()
             if usage:
                 print("本次消耗",usage.total_tokens,"tokens")
-            messages.append({"role":"assistant","content":collected_content})
+            final_message: DeepSeekAssistantMessageParam = {
+                "role": "assistant",
+                "content": collected_content,
+            }
+            if collected_reason:
+                final_message["reasoning_content"] = collected_reason
+            messages.append(final_message)
             break
 
         # 走到这里,说明有工具调用
