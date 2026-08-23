@@ -1,0 +1,48 @@
+# ---- 密钥 / 环境变量（最重要，务必别提交）----
+.env
+.env.*
+!.env.example
+
+# ---- 虚拟环境 ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- Python 字节码 / 缓存 ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ---- 打包 / 分发产物 ----
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ---- 测试与类型检查缓存 ----
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ---- 编辑器 / IDE ----
+# 共享 .vscode/settings.json（里面是解释器路径等项目级配置），其余忽略
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+.idea/
+*.swp
+
+# ---- 操作系统 ----
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ---- 运行时产物 ----
+*.log

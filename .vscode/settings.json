@@ -1,0 +1,11 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/.venv/Lib/site-packages"
+  ],
+  "[python]": {
+      "editor.suggestOnTriggerCharacters": true,
+      "editor.wordBasedSuggestions": "off",
+      "editor.inlineSuggest.enabled": false
+  },
+}
