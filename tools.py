@@ -4,7 +4,6 @@ import operator
 import json
 from datetime import datetime
 from openai.types.chat import ChatCompletionFunctionToolParam
-# pyrefly: ignore [missing-import]
 from tavily import TavilyClient
 
 _tavily_client: TavilyClient | None = None
