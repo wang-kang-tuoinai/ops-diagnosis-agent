@@ -13,7 +13,7 @@ from typing import Annotated, TypedDict
 
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from langchain_core.runnables import Runnable
-from langchain_openai import ChatOpenAI
+from deepseek_chat import DeepSeekChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -39,10 +39,12 @@ def create_llm() -> Runnable:
             "环境变量 DEEPSEEK_API_KEY 未设置，无法创建客户端。"
             "请先设置后再运行，例如：$env:DEEPSEEK_API_KEY='sk-xxx'"
         )
-    llm = ChatOpenAI(
+    llm = DeepSeekChatOpenAI(
         model=MODEL,
         api_key=SecretStr(api_key),
         base_url=BASE_URL,
+        reasoning_effort="high",
+        extra_body={"thinking": {"type": "enabled"}},
     )
     return llm.bind_tools(tools=tools)
 
@@ -79,6 +81,7 @@ def run_turn(app, messages: list, user_input: str) -> list:
     """跑完一轮对话：流式打印 AI 输出与工具调用，返回追加本轮消息后的完整列表。"""
     current = list(messages) + [("user", user_input)]
     final_messages = messages
+    thinking_started = False  # 本轮是否已开始输出 Thinking（用于控制前缀和换行）
     ai_started = False  # 本轮是否已开始输出 AI 文本（用于控制 "AI: " 前缀和换行）
 
     for mode, payload in app.stream(
@@ -90,26 +93,43 @@ def run_turn(app, messages: list, user_input: str) -> list:
 
         msg_chunk, _metadata = payload
         if isinstance(msg_chunk, ToolMessage):
+            if thinking_started:
+                print()
+                thinking_started = False
             if ai_started:
                 print()
                 ai_started = False
             print(f"[工具 {msg_chunk.name} 返回] {msg_chunk.content}")
         elif isinstance(msg_chunk, AIMessageChunk):
+            # 思考内容：DeepSeekChatOpenAI 已把它捞进 additional_kwargs["reasoning_content"]
+            reasoning = msg_chunk.additional_kwargs.get("reasoning_content")
+            if reasoning:
+                if not thinking_started:
+                    print("Thinking: ", end="", flush=True)
+                    thinking_started = True
+                print(reasoning, end="", flush=True)
+
             # 工具调用在流式里是分片到达的：name/id 只在第一个分片，arguments 逐段拼。
             # 不能读 tool_calls（后续分片会得到 name='' 的半成品），要读 tool_call_chunks 里带 name 的 chunk。
             names = [tc["name"] for tc in msg_chunk.tool_call_chunks if tc.get("name")]
             if names:
+                if thinking_started:
+                    print()
+                    thinking_started = False
                 if ai_started:
                     print()
                     ai_started = False
                 print(f"  ↳ 请求调用工具 {names}")
             elif msg_chunk.content:
+                if thinking_started:
+                    print()  # 思考结束，换行后再输出回答
+                    thinking_started = False
                 if not ai_started:
                     print("AI: ", end="", flush=True)
                     ai_started = True
                 print(msg_chunk.content, end="", flush=True)
 
-    if ai_started:
+    if thinking_started or ai_started:
         print()
     return final_messages
 
