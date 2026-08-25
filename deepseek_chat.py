@@ -13,6 +13,28 @@ from typing import Any
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_openai import ChatOpenAI
 
+DEBUG_PAYLOAD = False  # 调试开关：为 True 时每次发请求前打印完整上下文，调试完改成 False
+
+
+def _debug_print_payload(payload: dict) -> None:
+    """调试用：打印即将发给模型的请求，重点展示 messages 上下文。"""
+    print("\n" + "=" * 72)
+    print(f"发送请求 | model={payload.get('model')} | stream={payload.get('stream')}")
+    msgs = payload.get("messages", [])
+    print(f"messages 共 {len(msgs)} 条:")
+    for i, m in enumerate(msgs):
+        content = m.get("content")
+        if isinstance(content, str) and len(content) > 160:
+            content = content[:160] + f"...(共{len(m['content'])}字)"
+        line = f"  [{i}] {m.get('role')}: {content!r}"
+        if m.get("tool_calls"):
+            names = [tc.get("function", {}).get("name") for tc in m["tool_calls"]]
+            line += f" | tool_calls={names}"
+        if m.get("reasoning_content"):
+            line += f" | reasoning={m['reasoning_content'][:80]!r}"
+        print(line)
+    print("=" * 72 + "\n")
+
 
 class DeepSeekChatOpenAI(ChatOpenAI):
     def _convert_chunk_to_generation_chunk(
@@ -73,4 +95,6 @@ class DeepSeekChatOpenAI(ChatOpenAI):
                 reasoning = src.additional_kwargs.get("reasoning_content")
                 if reasoning:
                     out["reasoning_content"] = reasoning
+        if DEBUG_PAYLOAD:
+            _debug_print_payload(payload)
         return payload
