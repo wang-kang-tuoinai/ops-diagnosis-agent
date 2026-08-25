@@ -11,7 +11,14 @@ stream_mode=["messages", "values"] 混合模式：
 import os
 from typing import Annotated, TypedDict
 
-from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    HumanMessage,
+    RemoveMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_core.runnables import Runnable
 from deepseek_chat import DeepSeekChatOpenAI
 from langgraph.graph import END, START, StateGraph
@@ -25,6 +32,7 @@ from langgraph_tools import tools
 MODEL = "deepseek-v4-flash"
 BASE_URL = "https://api.deepseek.com"
 SYSTEM_PROMPT = "你是一个helpful的助手"
+KEEP_TURNS = 2  # 保留最近几轮完整对话
 
 
 class State(TypedDict):
@@ -57,23 +65,68 @@ def should_continue(state: State) -> str:
     return "end"
 
 
-def build_app(llm):
+def split_into_turns(messages: list) -> list[list]:
+    """把消息按 user 消息分成若干轮，每轮从 user 开始到下一个 user 之前。"""
+    turns: list[list] = []
+    current: list = []
+    for msg in messages:
+        if isinstance(msg, HumanMessage) and current:
+            turns.append(current)
+            current = []
+        current.append(msg)
+    if current:
+        turns.append(current)
+    return turns
+
+
+def truncate_messages(messages: list, keep_turns: int) -> list:
+    """保留 system 消息 + 最近 keep_turns 轮完整对话。"""
+    system_msgs = [m for m in messages if isinstance(m, SystemMessage)]
+    # 单独拦掉 keep_turns<=0：切片 turns[-0:] 等价于 turns[0:]，
+    # 会保留全部历史，跟「一轮都不留」的语义正好相反
+    if keep_turns <= 0:
+        return system_msgs
+    rest = [m for m in messages if not isinstance(m, SystemMessage)]
+    turns = split_into_turns(rest)
+    kept = turns[-keep_turns:]
+    result = list(system_msgs)
+    for t in kept:
+        result.extend(t)
+    return result
+
+
+def build_app(llm, keep_turns: int = KEEP_TURNS):
     """用给定的 LLM 构建并编译 langgraph 图，方便注入假 LLM 做测试。"""
     def call_llm(state: State) -> dict:
         # 这里保持 llm.invoke：stream_mode="messages" 会让它内部自动流式
         response = llm.invoke(state["messages"])
         return {"messages": [response]}
 
+    def truncate(state: State) -> dict:
+        """截断历史：只保留 system 消息 + 最近 keep_turns 轮。"""
+        messages = state["messages"]
+        kept = truncate_messages(messages, keep_turns)
+        keep_ids = {m.id for m in kept}
+        return {
+            "messages": [
+                RemoveMessage(id=m.id)
+                for m in messages
+                if m.id is not None and m.id not in keep_ids
+            ]
+        }
+
     g = StateGraph(State)
     g.add_node("call_llm", call_llm)
     g.add_node("tools", ToolNode(tools=tools))
+    g.add_node("truncate", truncate)
     g.add_edge(START, "call_llm")
     g.add_conditional_edges(
         "call_llm",
         should_continue,
-        {"tools": "tools", "end": END},
+        {"tools": "tools", "end": "truncate"},
     )
     g.add_edge("tools", "call_llm")
+    g.add_edge("truncate", END)
     return g.compile()
 
 
