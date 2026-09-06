@@ -18,7 +18,7 @@ from tools import get_current_time as _get_current_time
 from tools import search_web as _search_web
 
 # obs-api 基础地址，可通过环境变量 OBS_API_BASE 覆盖
-OBS_API_BASE = os.environ.get("OBS_API_BASE", "http://localhost:8081/api/v1")
+OBS_API_BASE = os.environ.get("OBS_API_BASE", "http://localhost:8082/api/v1")
 
 
 def _get(endpoint: str, **params: Any) -> str:
@@ -128,5 +128,3 @@ def search_logs(
 
 # langgraph / langchain 直接使用这个工具列表
 tools = [search_web, calculate, get_current_time, query_log_stats, query_log_templates, search_logs]
-
-print(query_log_stats.args_schema.model_json_schema())
