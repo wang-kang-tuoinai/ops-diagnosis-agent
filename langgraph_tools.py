@@ -126,5 +126,57 @@ def search_logs(
     )
 
 
+@tool
+def query_trace_stats(
+    minutes_ago: Annotated[int, "查询最近多少分钟。默认 60。若指定了 start/end 则忽略此参数"] = 60,
+    start: Annotated[int, "起始时间，秒级 Unix 时间戳。仅在查询历史特定时间段时使用"] = 0,
+    end: Annotated[int, "结束时间，秒级 Unix 时间戳。仅在查询历史特定时间段时使用"] = 0,
+    operation: Annotated[str, "按接口筛选，传接口名如 'POST /api/v1/users'。留空表示统计所有接口"] = "",
+    limit: Annotated[int, "最多拉取多少条 trace 用于统计，默认 200，上限 500"] = 200,
+) -> str:
+    """从调用链（trace）角度统计各 HTTP 接口的耗时分布和健康状态。
+
+    **这个工具能回答日志无法回答的问题**：一个请求表面上成功（HTTP 200），
+    但内部某个环节（缓存、数据库、消息队列）其实出错了——这类"被降级掩盖的故障"
+    只有 trace 能识别。
+
+    返回内容：
+    - by_status：请求按三种状态分类
+      · ok       —— 全链路正常
+      · degraded —— 根请求成功，但内部有环节报错（如 Redis 挂了降级到数据库，
+                     用户拿到 200 但实际变慢了 100 倍）
+      · failed   —— 请求本身失败（5xx）
+    - entrypoints：每个接口的请求数、p50/p95/p99 耗时、failed/degraded 计数
+
+    典型使用场景：
+    - "系统有没有隐藏的问题" → 看 degraded 数量
+    - "哪个接口慢" → 看 entrypoints 的 p95/p99
+    - "哪个接口在报错" → 看 entrypoints 的 failed
+
+    注意：只统计 HTTP 入口请求，不统计内部操作耗时。
+    想知道某个接口的时间具体花在哪一层，需要下钻单条 trace。
+    时间范围有两种指定方式：
+    - 默认用 minutes_ago 查询最近一段时间（推荐，大多数诊断场景用这个）
+    - 需要查询历史特定时间段时，传 start/end 绝对时间戳（需先用 get_current_time 确认当前时间）
+    """
+    import time
+
+    # 若未提供绝对时间，回退到 minutes_ago
+    if not start and not end:
+        end = int(time.time())
+        start = end - minutes_ago * 60
+
+    return _get(
+        "/traces/stats",
+        service="ops-agent-backend",
+        operation=operation or None,  # 空字符串不传，让后端走默认
+        start=start,
+        end=end,
+        limit=limit,
+    )
+
+
+
 # langgraph / langchain 直接使用这个工具列表
-tools = [search_web, calculate, get_current_time, query_log_stats, query_log_templates, search_logs]
+tools = [search_web, calculate, get_current_time, query_log_stats, query_log_templates, search_logs, query_trace_stats]
+
