@@ -177,6 +177,29 @@ def query_trace_stats(
 
 
 
-# langgraph / langchain 直接使用这个工具列表
-tools = [search_web, calculate, get_current_time, query_log_stats, query_log_templates, search_logs, query_trace_stats]
+@tool
+def search_traces(
+    service: Annotated[str, "根入口所属服务"] = "ops-agent-backend",
+    operation: Annotated[str | None, "根 Span 的入口名，如 GET /api/v1/users；不是 Redis/MySQL 子操作"] = None,
+    start: Annotated[int | None, "秒级 Unix 开始时间，默认最近一小时"] = None,
+    end: Annotated[int | None, "秒级 Unix 结束时间，默认当前时间"] = None,
+    status: Annotated[str | None, "整条链路分类：ok/degraded/failed，不是单个根 Span 状态"] = None,
+    min_duration_ms: Annotated[float | None, "根 Span 耗时下限，毫秒，含等号"] = None,
+    sort: Annotated[str, "duration_desc 耗时降序或 start_desc 最新优先"] = "duration_desc",
+    limit: Annotated[int, "最终返回数量，默认 10，上限 50"] = 10,
+    fetch_limit: Annotated[int, "Jaeger 候选获取上限，默认 200，上限 500"] = 200,
+) -> str:
+    """查找具体的慢请求或异常请求，返回摘要与 trace_id，不返回 Span 树。
 
+    宽泛诊断先使用 query_trace_stats 定位入口，再按入口、状态、耗时下钻。
+    耗时是根 Span 的耗时；degraded 表示根未出错但后代出错，沿用 stats 的 4xx 特例。
+    必须阅读 notices：排序仅针对已获取候选，空结果不能证明整个窗口无异常。
+    error_summary 是代表性错误证据，不是已确认根因。可用 trace_id 查询关联日志。
+    """
+    return _get("/traces/search", service=service, operation=operation, start=start,
+                end=end, status=status, min_duration_ms=min_duration_ms,
+                sort=sort, limit=limit, fetch_limit=fetch_limit)
+
+
+# langgraph / langchain 直接使用这个工具列表
+tools = [search_web, calculate, get_current_time, query_log_stats, query_log_templates, search_logs, query_trace_stats, search_traces]
