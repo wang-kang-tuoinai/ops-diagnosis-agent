@@ -201,5 +201,24 @@ def search_traces(
                 sort=sort, limit=limit, fetch_limit=fetch_limit)
 
 
+@tool
+def get_trace_detail(
+    trace_id: Annotated[str, "从 search_traces 或日志获取的真实 trace_id"],
+    max_spans: Annotated[int, "最多展示节点数，默认 50，上限 200；裁剪时可提高"] = 50,
+) -> str:
+    """查看单次请求的调用树，定位慢操作并检查各节点错误。
+
+    已有 trace_id 可直接调用，无需重复 stats/search。保留正常节点以分析无错误的慢请求。
+    start_offset_ms 相对根开始时间；duration_ms 为节点总耗时；self_ms 是未被直接子
+    Span 时间区间覆盖的耗时，可能包含未埋点等待，不是 CPU 时间。并行耗时不能直接相加。
+    status_desc 表示操作失败描述；error 是记录的异常类型与消息，两者分别保留。
+    顶层 status 为 ok/degraded/failed，节点 status 为原始归一化状态。
+    必须阅读 warnings/truncated：裁剪或缺失可能隐藏错误，不能据此断言没有其他异常。
+    需要业务上下文时继续用 search_logs(trace_id=...)；错误节点不等于已确认根因。
+    """
+    from urllib.parse import quote
+    return _get(f"/traces/{quote(trace_id, safe='')}", max_spans=max_spans)
+
+
 # langgraph / langchain 直接使用这个工具列表
-tools = [search_web, calculate, get_current_time, query_log_stats, query_log_templates, search_logs, query_trace_stats, search_traces]
+tools = [search_web, calculate, get_current_time, query_log_stats, query_log_templates, search_logs, query_trace_stats, search_traces, get_trace_detail]
