@@ -32,7 +32,7 @@ from langgraph_tools import tools
 MODEL = "deepseek-v4-flash"
 BASE_URL = "https://api.deepseek.com"
 SYSTEM_PROMPT = "你是一个helpful的助手"
-KEEP_TURNS = 2  # 保留最近几轮完整对话
+KEEP_TURNS = 100  # 保留最近几轮完整对话
 
 
 class State(TypedDict):

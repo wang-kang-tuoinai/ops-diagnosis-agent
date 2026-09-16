@@ -4,3 +4,4 @@ langchain-openai==1.6.0
 langgraph==1.2.11
 openai==3.3.1
 tavily-python==0.7.27
+requests>=2.32,<3
