@@ -46,3 +46,4 @@ desktop.ini
 
 # ---- 运行时产物 ----
 *.log
+data/

@@ -1,12 +1,8 @@
-"""基于 langgraph 的 agent，用 stream_mode="messages" 实现流式输出（langgraph_agent.py 的副本）。
+"""CLI 与 HTTP 后端共用的诊断图。
 
-和「在节点里 print」不同，这里节点保持纯净（call_llm 仍用 llm.invoke），
-流式打印完全交给 app.stream(stream_mode="messages") 来做。langgraph 会通过
-_StreamingCallbackHandler 让 invoke 内部自动走流式，从而逐 token 吐出 chunk。
-
-stream_mode=["messages", "values"] 混合模式：
-- ('messages', (chunk, metadata)) -> 逐 token / 逐消息 chunk
-- ('values', state_dict)          -> 每个 super-step 结束时的完整状态（用于拿最终 messages）
+节点提供 invoke / ainvoke 两条路径，由 LangGraph messages 流输出模型增量。
+CLI 使用 messages + values 打印；后端使用 messages + updates + custom 生成 SSE，
+并注入 AsyncSqliteSaver 持久化状态。上下文裁剪仅影响模型输入。
 """
 import os
 from typing import Annotated, TypedDict
@@ -15,11 +11,10 @@ from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
     HumanMessage,
-    RemoveMessage,
     SystemMessage,
     ToolMessage,
 )
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableLambda, RunnableConfig
 from deepseek_chat import DeepSeekChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -27,6 +22,7 @@ from langgraph.prebuilt import ToolNode
 from pydantic import SecretStr
 
 from langgraph_tools import tools
+from graph_events import wrap_tool_call, awrap_tool_call
 
 # ---- 可调参数 ----
 MODEL = "deepseek-v4-flash"
@@ -95,39 +91,40 @@ def truncate_messages(messages: list, keep_turns: int) -> list:
     return result
 
 
-def build_app(llm, keep_turns: int = KEEP_TURNS):
-    """用给定的 LLM 构建并编译 langgraph 图，方便注入假 LLM 做测试。"""
-    def call_llm(state: State) -> dict:
-        # 这里保持 llm.invoke：stream_mode="messages" 会让它内部自动流式
-        response = llm.invoke(state["messages"])
+def build_app(llm, keep_turns: int = KEEP_TURNS, checkpointer=None, tool_list=None):
+    """CLI 与异步后端共用图；只裁剪模型输入，checkpoint 保留完整消息。"""
+    if keep_turns < 1:
+        raise ValueError("keep_turns 必须至少为 1")
+
+    def context(state):
+        messages = truncate_messages(state["messages"], keep_turns)
+        if not any(isinstance(message, SystemMessage) for message in messages):
+            messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
+        return messages
+
+    def call_llm(state: State, config: RunnableConfig) -> dict:
+        response = llm.invoke(context(state), config=config)
         return {"messages": [response]}
 
-    def truncate(state: State) -> dict:
-        """截断历史：只保留 system 消息 + 最近 keep_turns 轮。"""
-        messages = state["messages"]
-        kept = truncate_messages(messages, keep_turns)
-        keep_ids = {m.id for m in kept}
-        return {
-            "messages": [
-                RemoveMessage(id=m.id)
-                for m in messages
-                if m.id is not None and m.id not in keep_ids
-            ]
-        }
+    async def acall_llm(state: State, config: RunnableConfig) -> dict:
+        response = await llm.ainvoke(context(state), config=config)
+        return {"messages": [response]}
 
     g = StateGraph(State)
-    g.add_node("call_llm", call_llm)
-    g.add_node("tools", ToolNode(tools=tools))
-    g.add_node("truncate", truncate)
+    g.add_node("call_llm", RunnableLambda(call_llm, afunc=acall_llm))
+    g.add_node("tools", ToolNode(
+        tools=tools if tool_list is None else tool_list,
+        wrap_tool_call=wrap_tool_call, awrap_tool_call=awrap_tool_call,
+        handle_tool_errors=lambda exc: f"工具执行失败（{type(exc).__name__}），请检查服务状态。",
+    ))
     g.add_edge(START, "call_llm")
     g.add_conditional_edges(
         "call_llm",
         should_continue,
-        {"tools": "tools", "end": "truncate"},
+        {"tools": "tools", "end": END},
     )
     g.add_edge("tools", "call_llm")
-    g.add_edge("truncate", END)
-    return g.compile()
+    return g.compile(checkpointer=checkpointer)
 
 
 def run_turn(app, messages: list, user_input: str) -> list:

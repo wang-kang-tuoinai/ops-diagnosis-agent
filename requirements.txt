@@ -5,3 +5,8 @@ langgraph==1.2.11
 openai==3.3.1
 tavily-python==0.7.27
 requests>=2.32,<3
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+langgraph-checkpoint-sqlite>=3,<4
+aiomysql>=0.2,<1
+cryptography>=43
