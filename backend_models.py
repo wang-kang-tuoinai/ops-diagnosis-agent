@@ -71,6 +71,6 @@ class RunView(BaseModel):
 
 class HistoryResponse(BaseModel):
     conversation_id: UUID
-    items: list[RunView]
-    has_more: bool
-    next_cursor: int | None
+    items: list[RunView] = Field(description="本页对话轮次，按 seq 从旧到新排列")
+    has_more: bool = Field(description="是否还有更早的历史")
+    next_cursor: int | None = Field(description="加载更早历史时传入 before；无更多记录时为 null")

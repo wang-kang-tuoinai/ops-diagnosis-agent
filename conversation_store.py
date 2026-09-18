@@ -164,10 +164,14 @@ class MySQLConversationStore:
             row["events"] = json.loads(row["events"])
         return row
 
-    async def history(self, conversation_id, limit, after):
+    async def history(self, conversation_id, limit, before=None):
         await self.get(conversation_id)
-        rows = await self.execute("""SELECT * FROM agent_runs WHERE conversation_id=%s AND seq>%s
-            ORDER BY seq ASC LIMIT %s""", (conversation_id, after, limit), True)
+        if before is None:
+            rows = await self.execute("""SELECT * FROM agent_runs WHERE conversation_id=%s
+                ORDER BY seq DESC LIMIT %s""", (conversation_id, limit), True)
+        else:
+            rows = await self.execute("""SELECT * FROM agent_runs WHERE conversation_id=%s AND seq<%s
+                ORDER BY seq DESC LIMIT %s""", (conversation_id, before, limit), True)
         return [self.decode(row) for row in rows]
 
     async def get_run(self, conversation_id, run_id):

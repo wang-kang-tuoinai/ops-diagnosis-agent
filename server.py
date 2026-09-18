@@ -104,11 +104,13 @@ def create_app(manager=None, settings=None):
         return {"items": rows[:limit], "has_more": more, "next_offset": offset + limit if more else None}
 
     @app.get("/api/v1/conversations/{conversation_id}/messages", response_model=HistoryResponse)
-    async def history(conversation_id: UUID, limit: int = Query(20, ge=1, le=100), after: int = Query(0, ge=0)):
-        rows = await app.state.manager.store.history(str(conversation_id), limit + 1, after)
+    async def history(conversation_id: UUID, limit: int = Query(20, ge=1, le=100),
+                      before: int | None = Query(None, ge=1, description="查询此 seq 之前的历史；不传则加载最近的轮次")):
+        rows = await app.state.manager.store.history(str(conversation_id), limit + 1, before)
         more = len(rows) > limit
         items = rows[:limit]
-        return {"conversation_id": conversation_id, "items": items, "has_more": more,
+        # 数据库先取最近记录，页内按从旧到新返回，供聊天界面直接展示。
+        return {"conversation_id": conversation_id, "items": list(reversed(items)), "has_more": more,
                 "next_cursor": items[-1]["seq"] if more else None}
 
     @app.post("/api/v1/conversations/{conversation_id}/messages", response_class=StreamingResponse,

@@ -111,7 +111,7 @@ MySQL 和 SQLite 都需要持久化保存，只保留其中一个无法完整恢
 | POST | `/api/v1/conversations` | 创建会话，返回 201 |
 | GET | `/api/v1/conversations?limit=20&offset=0` | 按最近更新时间倒序列出会话 |
 | POST | `/api/v1/conversations/{conversation_id}/messages` | 提问，返回 SSE |
-| GET | `/api/v1/conversations/{conversation_id}/messages?limit=20&after=0` | 按执行顺序查询展示历史 |
+| GET | `/api/v1/conversations/{conversation_id}/messages?limit=20` | 默认加载最近 20 轮，传 before 向前翻页 |
 | GET | `/api/v1/conversations/{conversation_id}/runs/{run_id}` | 查询一轮的状态和已有输出 |
 | POST | `/api/v1/conversations/{conversation_id}/runs/{run_id}/cancel` | 停止一轮执行，返回最终记录 |
 
@@ -142,8 +142,12 @@ created_at, updated_at, finished_at, error, events
 
 `status` 取值为 `running/completed/failed/cancelled/interrupted`。
 使用 `question` 渲染用户消息，使用 `events` 按顺序渲染 Agent 输出。
-`has_more=true` 时，将 `next_cursor` 传入下一次的 `after`；这是执行记录的游标，
-与 SSE 事件内部的 `seq` 不是同一个字段。会话列表则使用 `next_offset`。
+首次不传 `before`，默认加载最近 20 轮；每页 `items` 都按从旧到新排列，最新消息在底部。
+`has_more=true` 表示还有更早的历史，将 `next_cursor` 传入下一次的 `before`（正整数），
+例如 `?limit=20&before=42`，只查询 `seq < 42` 的记录。前端将该页插入现有列表顶部。
+无更多历史时 `next_cursor` 为 `null`。`limit` 的单位是一轮执行，不是单条聊天气泡。
+这里是执行记录的游标，与 SSE 事件内部的 `seq` 不是同一个字段。
+原 `after` 参数已移除；会话列表仍使用 `next_offset`。
 
 ## SSE 事件
 

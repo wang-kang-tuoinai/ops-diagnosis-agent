@@ -68,10 +68,11 @@ class MemoryStore:
             raise MissingConversation()
         return copy.deepcopy(self.runs[run_id])
 
-    async def history(self, conversation_id, limit, after):
+    async def history(self, conversation_id, limit, before=None):
         await self.get(conversation_id)
-        return [copy.deepcopy(r) for r in self.runs.values()
-                if r['conversation_id'] == conversation_id and r['seq'] > after][:limit]
+        rows = [copy.deepcopy(r) for r in self.runs.values()
+                if r['conversation_id'] == conversation_id and (before is None or r['seq'] < before)]
+        return sorted(rows, key=lambda r: r['seq'], reverse=True)[:limit]
 
 
 @tool(response_format='content_and_artifact')
@@ -186,8 +187,36 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([m.content for m in self.llm._seen[-1] if isinstance(m, HumanMessage)], ['other'])
         history = (await self.client.get(f'/api/v1/conversations/{cid}/messages?limit=1')).json()
         self.assertTrue(history['has_more'])
-        more = (await self.client.get(f"/api/v1/conversations/{cid}/messages?after={history['next_cursor']}")).json()
-        self.assertEqual([r['question'] for r in more['items']], ['second', 'third'])
+        self.assertEqual([r['question'] for r in history['items']], ['third'])
+        more = (await self.client.get(f"/api/v1/conversations/{cid}/messages?before={history['next_cursor']}")).json()
+        self.assertEqual([r['question'] for r in more['items']], ['first', 'second'])
+        self.assertFalse(more['has_more'])
+        self.assertIsNone(more['next_cursor'])
+
+    async def test_history_backward_pagination_boundaries(self):
+        cid = await self.conversation()
+        url = f'/api/v1/conversations/{cid}/messages'
+        empty = (await self.client.get(url)).json()
+        self.assertEqual(empty['items'], [])
+        self.assertFalse(empty['has_more'])
+        self.assertIsNone(empty['next_cursor'])
+        for question in ('first', 'second', 'third', 'fourth'):
+            await self.ask(cid, question)
+        page = (await self.client.get(url, params={'limit': 2})).json()
+        self.assertEqual([r['question'] for r in page['items']], ['third', 'fourth'])
+        self.assertTrue(page['has_more'])
+        self.assertEqual(page['next_cursor'], page['items'][0]['seq'])
+        # 翻页间新增消息不能导致旧页重复或漏项。
+        await self.ask(cid, 'fifth')
+        older = (await self.client.get(url, params={'limit': 2, 'before': page['next_cursor']})).json()
+        self.assertEqual([r['question'] for r in older['items']], ['first', 'second'])
+        self.assertFalse(older['has_more'])
+        self.assertIsNone(older['next_cursor'])
+        end = (await self.client.get(url, params={'before': older['items'][0]['seq']})).json()
+        self.assertEqual(end['items'], [])
+        self.assertIsNone(end['next_cursor'])
+        for invalid in (0, -1, 'invalid'):
+            self.assertEqual((await self.client.get(url, params={'before': invalid})).status_code, 422)
 
     async def test_restart_restores_sqlite_context(self):
         cid = await self.conversation()
@@ -256,7 +285,7 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
                  'raw_path': b'/', 'query_string': b'', 'headers': [(b'content-type', b'application/json')],
                  'client': ('127.0.0.1', 1), 'server': ('test', 80), 'root_path': ''}
         await asyncio.wait_for(self.app(scope, receive, send), timeout=5)
-        history = await self.store.history(cid, 10, 0)
+        history = await self.store.history(cid, 10)
         self.assertEqual(history[0]['status'], 'cancelled')
 
     async def test_cancel_emits_terminal_event_for_running_tool(self):
