@@ -3,7 +3,44 @@
 基于原有 `langgraph_agent_msgstream.py`，增加 FastAPI、SSE 和会话持久化。
 原 CLI 入口保留，HTTP 入口为 `server:app`。本次只完成 Agent 后端，rag-gateway 尚未改为这些接口的代理或前端。
 
-## 启动
+## Docker Compose 启动
+
+根目录 Compose 已包含 `ops-diagnosis-agent` 和独立的 `agent-mysql`。
+在仓库根目录首次配置 `.env`，填入 `DEEPSEEK_API_KEY`，然后启动：
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build ops-diagnosis-agent
+docker compose ps agent-mysql ops-diagnosis-agent
+```
+
+已有 `.env` 时直接补充变量，不要覆盖。Compose 读取的是仓库根目录 `.env`，
+不是 `ops-diagnosis-agent/.env`；宿主机运行后端则使用下面的本地配置。
+
+| 配置 | 值 |
+| --- | --- |
+| Agent HTTP | `http://127.0.0.1:8001`，接口文档 `/docs` |
+| 独立 MySQL | 容器内 `agent-mysql:3306`，宿主机 `127.0.0.1:3308` |
+| 会话数据库 / 账户 | `ops_diagnosis` / `agent` |
+| 数据库密码 | 根目录 `AGENT_MYSQL_PASSWORD`，开发默认 `agent` |
+| 观测工具地址 | `http://obs-api:8081/api/v1` |
+| 知识检索地址 | `http://rag-service:8000/api/v1` |
+| MySQL 数据卷 | `agent-mysql-data` → `/var/lib/mysql` |
+| SQLite 数据卷 | `agent-checkpoints` → `/app/data` |
+
+Agent 等独立 MySQL 健康后启动；同时拉起观测和知识服务的依赖。
+观测及知识服务只要求已启动，不把它们的健康状态作为 Agent 启动门槛，
+因此知识服务初次加载模型期间，知识检索可能暂不可用。
+后续网关可通过 `http://ops-diagnosis-agent:8001` 访问，本次未修改网关路由。
+
+重建镜像或容器会保留命名数据卷，普通 `docker compose down` 也会保留；
+`docker compose down -v` 会删除数据卷和对话数据。MySQL 的初始化账户和密码
+只在空数据目录首次启动时生效，已有数据卷时修改环境变量不会自动修改数据库账户密码。
+
+两个存储卷都需要保留，它们共同支持历史展示和上下文恢复。
+新库不自动迁移此前写入业务数据库或本地 SQLite 的会话。
+
+## 本地启动
 
 在 `ops-diagnosis-agent` 目录执行：
 
@@ -18,6 +55,9 @@ Copy-Item .env.example .env
 默认连接本项目 Compose 的 `127.0.0.1:3306/ops_agent`，自动创建
 `agent_conversations` 和 `agent_runs` 两张表；数据库本身需要事先存在。
 这两张表与业务表独立，未使用存放观测日志的 `obs-mysql`。
+若本地进程也要使用新增的独立 MySQL，请将 `.env` 中的端口改为 `3308`、
+数据库改为 `ops_diagnosis`、用户改为 `agent`，密码与 Compose 保持一致。
+不要让本地进程和容器 Agent 同时使用同一套会话表；二者也需要配套的 SQLite 数据。
 
 环境变量：
 
