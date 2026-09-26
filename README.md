@@ -1,7 +1,7 @@
 # 运维诊断 Agent 后端
 
 基于原有 `langgraph_agent_msgstream.py`，增加 FastAPI、SSE 和会话持久化。
-原 CLI 入口保留，HTTP 入口为 `server:app`。本次只完成 Agent 后端，rag-gateway 尚未改为这些接口的代理或前端。
+原 CLI 入口保留，HTTP 入口为 `server:app`。rag-gateway 已代理这些会话接口，前端已接入 SSE 与历史展示。
 
 ## Docker Compose 启动
 
@@ -31,7 +31,7 @@ docker compose ps agent-mysql ops-diagnosis-agent
 Agent 等独立 MySQL 健康后启动；同时拉起观测和知识服务的依赖。
 观测及知识服务只要求已启动，不把它们的健康状态作为 Agent 启动门槛，
 因此知识服务初次加载模型期间，知识检索可能暂不可用。
-后续网关可通过 `http://ops-diagnosis-agent:8001` 访问，本次未修改网关路由。
+网关通过 `http://ops-diagnosis-agent:8001` 代理会话 API，浏览器可统一访问网关的 `8081` 端口。
 
 重建镜像或容器会保留命名数据卷，普通 `docker compose down` 也会保留；
 `docker compose down -v` 会删除数据卷和对话数据。MySQL 的初始化账户和密码
