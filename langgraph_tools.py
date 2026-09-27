@@ -20,6 +20,7 @@ from rag_tools import search_ops_knowledge
 
 # obs-api 基础地址，可通过环境变量 OBS_API_BASE 覆盖
 OBS_API_BASE = os.environ.get("OBS_API_BASE", "http://localhost:8082/api/v1")
+TRACE_ENTRY_SERVICE = os.environ.get("TRACE_ENTRY_SERVICE", "ops-agent-backend").strip() or "ops-agent-backend"
 
 
 def _get(endpoint: str, **params: Any) -> str:
@@ -134,31 +135,22 @@ def query_trace_stats(
     end: Annotated[int, "结束时间，秒级 Unix 时间戳。仅在查询历史特定时间段时使用"] = 0,
     operation: Annotated[str, "按接口筛选，传接口名如 'POST /api/v1/users'。留空表示统计所有接口"] = "",
     limit: Annotated[int, "最多拉取多少条 trace 用于统计，默认 200，上限 500"] = 200,
+    service: Annotated[str, "对外根入口所属服务，默认使用配置的入口服务；不是任意下游服务"] = TRACE_ENTRY_SERVICE,
 ) -> str:
-    """从调用链（trace）角度统计各 HTTP 接口的耗时分布和健康状态。
+    """从用户请求视角统计指定服务的全局 server 根入口，查看接口耗时和下游错误证据。
 
-    **这个工具能回答日志无法回答的问题**：一个请求表面上成功（HTTP 200），
-    但内部某个环节（缓存、数据库、消息队列）其实出错了——这类"被降级掩盖的故障"
-    只有 trace 能识别。
-
-    返回内容：
-    - by_status：请求按三种状态分类
-      · ok       —— 全链路正常
-      · degraded —— 根请求成功，但内部有环节报错（如 Redis 挂了降级到数据库，
-                     用户拿到 200 但实际变慢了 100 倍）
-      · failed   —— 请求本身失败（5xx）
-    - entrypoints：每个接口的请求数、p50/p95/p99 耗时、failed/degraded 计数
-
-    典型使用场景：
-    - "系统有没有隐藏的问题" → 看 degraded 数量
-    - "哪个接口慢" → 看 entrypoints 的 p95/p99
-    - "哪个接口在报错" → 看 entrypoints 的 failed
-
-    注意：只统计 HTTP 入口请求，不统计内部操作耗时。
-    想知道某个接口的时间具体花在哪一层，需要下钻单条 trace。
-    时间范围有两种指定方式：
-    - 默认用 minutes_ago 查询最近一段时间（推荐，大多数诊断场景用这个）
-    - 需要查询历史特定时间段时，传 start/end 绝对时间戳（需先用 get_current_time 确认当前时间）
+    不知道服务名时可先使用默认入口服务；响应 service 表示实际范围，不代表所有服务或后台任务。
+    entrypoints 按 service + operation 分组，返回入口请求数、p50/p95/p99、failed/degraded。
+    downstream_error_services 是下游服务及 request_count：同一入口请求内同一服务只计一次，
+    多个服务的计数不可相加，不是下游自身错误率或根因认定。归属取错误 Span 自己的 service，
+    不能从调用超时推断被调用服务也有错误。
+    failed 表示入口自身有效错误或 HTTP 5xx；degraded 表示入口未失败但后代有有效错误；
+    ok 仅表示已采集范围没有有效错误。只排除已确认的 MySQL 重复键业务冲突，4xx 不直接判 ok。
+    degraded 不保证执行过业务降级，也可能返回 4xx。耗时包含下游等待，不能累加子 Span 耗时。
+    先复制入口 service/operation 给 search_traces 查异常请求；也可根据下游服务名搜索其自身入口，
+    此时不要把上游 operation 传给下游。search 的下游查询不限定同一上游，需用 trace_id 关联。
+    注意 notices：仅统计已获取样本，候选不足或链路不完整时不能断言系统无异常。
+    默认用 minutes_ago；历史窗口传 start/end 秒级时间戳。
     """
     import time
 
@@ -169,7 +161,7 @@ def query_trace_stats(
 
     return _get(
         "/traces/stats",
-        service="ops-agent-backend",
+        service=service,
         operation=operation or None,  # 空字符串不传，让后端走默认
         start=start,
         end=end,
@@ -180,22 +172,28 @@ def query_trace_stats(
 
 @tool
 def search_traces(
-    service: Annotated[str, "根入口所属服务"] = "ops-agent-backend",
-    operation: Annotated[str | None, "根 Span 的入口名，如 GET /api/v1/users；不是 Redis/MySQL 子操作"] = None,
+    service: Annotated[str, "目标服务名，匹配该服务的 server 入口，可位于跨服务链路中间"] = TRACE_ENTRY_SERVICE,
+    operation: Annotated[str | None, "目标服务自己的接口名，如 GET /api/v1/users；不是上游接口或 Redis/MySQL 子操作"] = None,
     start: Annotated[int | None, "秒级 Unix 开始时间，默认最近一小时"] = None,
     end: Annotated[int | None, "秒级 Unix 结束时间，默认当前时间"] = None,
-    status: Annotated[str | None, "整条链路分类：ok/degraded/failed，不是单个根 Span 状态"] = None,
-    min_duration_ms: Annotated[float | None, "根 Span 耗时下限，毫秒，含等号"] = None,
+    status: Annotated[str | None, "目标入口及后代分类：ok/degraded/failed；不受上游和兄弟分支错误影响"] = None,
+    min_duration_ms: Annotated[float | None, "目标服务入口 Span 耗时下限，毫秒，含等号"] = None,
     sort: Annotated[str, "duration_desc 耗时降序或 start_desc 最新优先"] = "duration_desc",
-    limit: Annotated[int, "最终返回数量，默认 10，上限 50"] = 10,
+    limit: Annotated[int, "最终返回入口调用数，默认 10，上限 50；同一 Trace 可有多次调用"] = 10,
     fetch_limit: Annotated[int, "Jaeger 候选获取上限，默认 200，上限 500"] = 200,
 ) -> str:
     """查找具体的慢请求或异常请求，返回摘要与 trace_id，不返回 Span 树。
 
     宽泛诊断先使用 query_trace_stats 定位入口，再按入口、状态、耗时下钻。
-    耗时是根 Span 的耗时；degraded 表示根未出错但后代出错，沿用 stats 的 4xx 特例。
+    每项是指定服务的一次 server 入口调用，以 trace_id + entry_span_id 标识，不要求入口为全局根。
+    耗时包含该入口执行期间的下游等待；状态和错误摘要只看该入口及后代，不含上游或兄弟分支。
+    只排除已确认的 MySQL 重复键业务冲突，4xx 不直接判 ok。failed 为入口有效错误或 5xx，
+    degraded 为后代有有效错误，ok 为已采集范围未见有效错误，不是业务请求必定成功。
     必须阅读 notices：排序仅针对已获取候选，空结果不能证明整个窗口无异常。
-    error_summary 是代表性错误证据，不是已确认根因。可用 trace_id 查询关联日志。
+    fetched_count 是候选 Trace 数，matched_count/returned_count 是入口调用数。
+    error_summary 为按时间排序子树、先后代后自身深度遍历找到的第一个有效错误；
+    service/span_id/operation/message 来自同一错误节点，不保证最早、唯一或根因。
+    用 trace_id 获取详情，再根据 entry_span_id 定位目标入口；详情顶层状态可能不同。
     """
     return _get("/traces/search", service=service, operation=operation, start=start,
                 end=end, status=status, min_duration_ms=min_duration_ms,
@@ -210,10 +208,13 @@ def get_trace_detail(
     """查看单次请求的调用树，定位慢操作并检查各节点错误。
 
     已有 trace_id 可直接调用，无需重复 stats/search。保留正常节点以分析无错误的慢请求。
-    start_offset_ms 相对根开始时间；duration_ms 为节点总耗时；self_ms 是未被直接子
+    start_offset_ms 相对全局根开始时间；没有唯一根时相对最早片段开始时间。
+    root 保留完整上游关系，fragments 保留缺失父节点或多个根的独立片段，用 entry_span_id 定位。
+    duration_ms 为节点总耗时；self_ms 是未被直接子
     Span 时间区间覆盖的耗时，可能包含未埋点等待，不是 CPU 时间。并行耗时不能直接相加。
     status_desc 表示操作失败描述；error 是记录的异常类型与消息，两者分别保留。
-    顶层 status 为 ok/degraded/failed，节点 status 为原始归一化状态。
+    顶层 status 为 ok/degraded/failed，无唯一全局根时为 unknown；节点 status 为原始归一化状态。
+    expected_error 标记被排除的已处理 MySQL 重复键，原始 error/status_desc 仍保留。
     必须阅读 warnings/truncated：裁剪或缺失可能隐藏错误，不能据此断言没有其他异常。
     需要业务上下文时继续用 search_logs(trace_id=...)；错误节点不等于已确认根因。
     """
