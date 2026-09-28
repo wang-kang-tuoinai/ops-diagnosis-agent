@@ -79,7 +79,7 @@ Copy-Item .env.example .env
 未向宿主机发布 rag-service 的端口；本地运行 Agent 时，需要本地启动 rag-service，
 或将 `RAG_API_BASE` 指向实际可访问的地址。
 
-Trace 工具的多服务口径：stats/search 共用指定服务 server 入口的选择逻辑，只分析入口及其后代，不包含上游和旁支。多根或缺失上游时仍统计可识别入口，并保留不完整提示。stats.total_calls 按 (trace_id, entry_span_id) 计数，取代 total_traces；meta.fetched_traces 单独表示已解析的候选 Trace 数。下游错误服务按每次入口调用去重，一条 Trace 可包含多次入口调用。detail 保留全局链路和缺失上游的 fragments。三者共用已确认的 MySQL 重复键业务冲突排除规则；不再把所有 4xx 直接判为 ok。默认仍只查询一个服务。具体契约见 `obs-api/docs/traces-stats.md`、`traces-search.md`、`traces-detail.md`。
+Trace 工具的多服务口径：stats/search 共用指定服务 server 入口的选择逻辑，只分析入口及其后代，不包含上游和旁支。多根或缺失上游时仍统计可识别入口，并保留不完整提示。stats.total_calls 按 (trace_id, entry_span_id) 计数，取代 total_traces；meta.fetched_traces 单独表示已解析并按 trace_id 去重的候选数。stats 不再接受 limit：未指定 operation 时自动发现 server 操作并逐个查询，默认每个上限 1500；指定 operation 时默认 5000。实际预算见 meta.per_operation_limit，各操作 success/failed/skipped、原始候选数及触顶情况见 meta.operation_queries。概览触顶时聚焦该 operation，仍触顶再缩小窗口；部分失败不代表零调用。search 的 limit/fetch_limit 不变。下游错误服务按每次入口调用去重，detail 保留全局链路和缺失上游的 fragments。三者共用已确认的 MySQL 重复键业务冲突排除规则；不再把所有 4xx 直接判为 ok。默认仍只查询一个服务。具体契约见 `obs-api/docs/traces-stats.md`、`traces-search.md`、`traces-detail.md`。
 
 启动后：
 

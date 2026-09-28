@@ -134,7 +134,6 @@ def query_trace_stats(
     start: Annotated[int, "起始时间，秒级 Unix 时间戳。仅在查询历史特定时间段时使用"] = 0,
     end: Annotated[int, "结束时间，秒级 Unix 时间戳。仅在查询历史特定时间段时使用"] = 0,
     operation: Annotated[str, "按接口筛选，传接口名如 'POST /api/v1/users'。留空表示统计所有接口"] = "",
-    limit: Annotated[int, "最多拉取多少条 trace 用于统计，默认 200，上限 500"] = 200,
     service: Annotated[str, "目标服务名，匹配其 server 入口，可位于链路中间；默认使用配置的单个服务"] = TRACE_ENTRY_SERVICE,
 ) -> str:
     """统计指定服务的 server 入口及其后代，查看接口耗时和下游错误证据，不包含上游和旁支。
@@ -143,7 +142,11 @@ def query_trace_stats(
     operation 匹配目标服务自己的入口操作名，不要求是全局根。缺少上游时仍可统计已识别入口。
     total_calls 按 (trace_id, entry_span_id) 计数，同一 Trace 多次进入该服务会分别统计。
     entrypoints 按 service + operation 分组，返回调用数、p50/p95/p99、failed/degraded。
-    meta.fetched_traces 是已解析的候选 Trace 数，limit 限制候选数，不限制 total_calls。
+    未指定 operation 时自动发现 server 操作并逐个查询，默认各最多 1500 条候选；指定时默认最多 5000 条。
+    无需传 limit；实际预算见 meta.per_operation_limit，已解析候选按 trace_id 去重计入 meta.fetched_traces。
+    检查 meta.operation_queries：status 为 success/failed/skipped，失败或未执行不代表零调用。
+    raw_trace_count 是各操作原始候选数；limit_reached 为 true 表示可能截断，不代表入口调用数。
+    概览触顶时指定该 operation 重查，仍触顶则缩小时间窗口；不要把多次查询统计直接相加。
     downstream_error_services 是下游服务及 request_count：同一次入口调用内同一服务只计一次，
     多个服务的计数不可相加，不是下游自身错误率或根因认定。归属取错误 Span 自己的 service，
     不能从调用超时推断被调用服务也有错误。
@@ -168,7 +171,6 @@ def query_trace_stats(
         operation=operation or None,  # 空字符串不传，让后端走默认
         start=start,
         end=end,
-        limit=limit,
     )
 
 

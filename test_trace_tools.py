@@ -14,12 +14,17 @@ class TraceToolTests(unittest.TestCase):
         self.assertEqual(get.call_args.args, ("/traces/stats",))
         self.assertEqual(get.call_args.kwargs["service"], "gateway")
         self.assertEqual(query_trace_stats.args["service"]["default"], TRACE_ENTRY_SERVICE)
+        self.assertNotIn("limit", query_trace_stats.args)
+        self.assertNotIn("limit", get.call_args.kwargs)
 
     @patch("langgraph_tools._get")
     def test_stats_preserves_call_counts_and_candidate_metadata(self, get):
         payload = {"service": "user", "stats": {"total_calls": 2,
                    "by_status": {"ok": 1, "degraded": 1, "failed": 0}},
-                   "meta": {"fetched_traces": 1, "fetch_limit": 200},
+                   "meta": {"fetched_traces": 1, "per_operation_limit": 1500,
+                            "operation_queries": [
+                                {"operation": "GET /a", "status": "success", "raw_trace_count": 1500, "limit_reached": True},
+                                {"operation": "PUT /b", "status": "failed", "raw_trace_count": None, "limit_reached": False}]},
                    "notices": ["partial trace"]}
         get.return_value = json.dumps(payload)
         response = query_trace_stats.invoke({"service": "user", "start": 1000, "end": 2000})
