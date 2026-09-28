@@ -72,14 +72,14 @@ Copy-Item .env.example .env
 | `AGENT_CHECKPOINT_PATH` | Agent 目录下 `data/checkpoints.sqlite` |
 | `AGENT_KEEP_TURNS` | `20`，包括当前问题在内的最近用户轮次，至少 1 |
 | `OBS_API_BASE` | `http://localhost:8082/api/v1` |
-| `TRACE_ENTRY_SERVICE` | `ops-agent-backend`，Trace 工具默认入口服务，可由调用参数覆盖 |
+| `TRACE_ENTRY_SERVICE` | `ops-agent-backend`，stats/search 默认查询的单个服务，不要求是全局入口，可由调用参数覆盖 |
 | `RAG_API_BASE` | `http://localhost:8000/api/v1` |
 
 观测和知识检索工具仍使用已有地址配置，需要对应服务可访问。当前根目录 Compose
 未向宿主机发布 rag-service 的端口；本地运行 Agent 时，需要本地启动 rag-service，
 或将 `RAG_API_BASE` 指向实际可访问的地址。
 
-Trace 工具的多服务口径：stats 统计指定服务的全局根入口，并按入口请求去重汇总下游错误服务；search 匹配指定服务自己的 server 入口，只分析其后代，一条 Trace 可返回多个 entry_span_id。detail 保留全局链路和缺失上游的 fragments。三者共用已确认的 MySQL 重复键业务冲突排除规则；不再把所有 4xx 直接判为 ok。具体契约见 `obs-api/docs/traces-stats.md`、`traces-search.md`、`traces-detail.md`。
+Trace 工具的多服务口径：stats/search 共用指定服务 server 入口的选择逻辑，只分析入口及其后代，不包含上游和旁支。多根或缺失上游时仍统计可识别入口，并保留不完整提示。stats.total_calls 按 (trace_id, entry_span_id) 计数，取代 total_traces；meta.fetched_traces 单独表示已解析的候选 Trace 数。下游错误服务按每次入口调用去重，一条 Trace 可包含多次入口调用。detail 保留全局链路和缺失上游的 fragments。三者共用已确认的 MySQL 重复键业务冲突排除规则；不再把所有 4xx 直接判为 ok。默认仍只查询一个服务。具体契约见 `obs-api/docs/traces-stats.md`、`traces-search.md`、`traces-detail.md`。
 
 启动后：
 

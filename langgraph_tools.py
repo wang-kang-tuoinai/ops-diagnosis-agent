@@ -135,13 +135,16 @@ def query_trace_stats(
     end: Annotated[int, "结束时间，秒级 Unix 时间戳。仅在查询历史特定时间段时使用"] = 0,
     operation: Annotated[str, "按接口筛选，传接口名如 'POST /api/v1/users'。留空表示统计所有接口"] = "",
     limit: Annotated[int, "最多拉取多少条 trace 用于统计，默认 200，上限 500"] = 200,
-    service: Annotated[str, "对外根入口所属服务，默认使用配置的入口服务；不是任意下游服务"] = TRACE_ENTRY_SERVICE,
+    service: Annotated[str, "目标服务名，匹配其 server 入口，可位于链路中间；默认使用配置的单个服务"] = TRACE_ENTRY_SERVICE,
 ) -> str:
-    """从用户请求视角统计指定服务的全局 server 根入口，查看接口耗时和下游错误证据。
+    """统计指定服务的 server 入口及其后代，查看接口耗时和下游错误证据，不包含上游和旁支。
 
-    不知道服务名时可先使用默认入口服务；响应 service 表示实际范围，不代表所有服务或后台任务。
-    entrypoints 按 service + operation 分组，返回入口请求数、p50/p95/p99、failed/degraded。
-    downstream_error_services 是下游服务及 request_count：同一入口请求内同一服务只计一次，
+    不知道服务名时可先使用默认服务；一次只查询一个服务，不代表所有服务或后台任务。
+    operation 匹配目标服务自己的入口操作名，不要求是全局根。缺少上游时仍可统计已识别入口。
+    total_calls 按 (trace_id, entry_span_id) 计数，同一 Trace 多次进入该服务会分别统计。
+    entrypoints 按 service + operation 分组，返回调用数、p50/p95/p99、failed/degraded。
+    meta.fetched_traces 是已解析的候选 Trace 数，limit 限制候选数，不限制 total_calls。
+    downstream_error_services 是下游服务及 request_count：同一次入口调用内同一服务只计一次，
     多个服务的计数不可相加，不是下游自身错误率或根因认定。归属取错误 Span 自己的 service，
     不能从调用超时推断被调用服务也有错误。
     failed 表示入口自身有效错误或 HTTP 5xx；degraded 表示入口未失败但后代有有效错误；

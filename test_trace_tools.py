@@ -16,6 +16,17 @@ class TraceToolTests(unittest.TestCase):
         self.assertEqual(query_trace_stats.args["service"]["default"], TRACE_ENTRY_SERVICE)
 
     @patch("langgraph_tools._get")
+    def test_stats_preserves_call_counts_and_candidate_metadata(self, get):
+        payload = {"service": "user", "stats": {"total_calls": 2,
+                   "by_status": {"ok": 1, "degraded": 1, "failed": 0}},
+                   "meta": {"fetched_traces": 1, "fetch_limit": 200},
+                   "notices": ["partial trace"]}
+        get.return_value = json.dumps(payload)
+        response = query_trace_stats.invoke({"service": "user", "start": 1000, "end": 2000})
+        self.assertEqual(json.loads(response), payload)
+        self.assertEqual(get.call_args.kwargs["service"], "user")
+
+    @patch("langgraph_tools._get")
     def test_search_preserves_service_entry_and_evidence(self, get):
         payload = {"items": [{"trace_id": "t", "entry_span_id": "u", "service": "user",
                               "error_summary": {"service": "profile", "span_id": "db", "message": "timeout"}}]}
