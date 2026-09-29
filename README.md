@@ -81,6 +81,8 @@ Copy-Item .env.example .env
 
 Trace 工具的多服务口径：stats/search 共用指定服务 server 入口的选择逻辑，只分析入口及其后代，不包含上游和旁支。多根或缺失上游时仍统计可识别入口，并保留不完整提示。stats.total_calls 按 (trace_id, entry_span_id) 计数，取代 total_traces；meta.fetched_traces 单独表示已解析并按 trace_id 去重的候选数。stats 不再接受 limit：未指定 operation 时自动发现 server 操作并逐个查询，默认每个上限 1500；指定 operation 时默认 5000。实际预算见 meta.per_operation_limit，各操作 success/failed/skipped、原始候选数及触顶情况见 meta.operation_queries。概览触顶时聚焦该 operation，仍触顶再缩小窗口；部分失败不代表零调用。search 的 limit/fetch_limit 不变。下游错误服务按每次入口调用去重，detail 保留全局链路和缺失上游的 fragments。三者共用已确认的 MySQL 重复键业务冲突排除规则；不再把所有 4xx 直接判为 ok。默认仍只查询一个服务。具体契约见 `obs-api/docs/traces-stats.md`、`traces-search.md`、`traces-detail.md`。
 
+日志工具的多服务口径：`query_log_stats` 不传 service 时按服务返回 `summaries`，传入 service 也始终返回数组；响应顶层保留 `window`。每项包含服务名、日志总量、ERROR 日志数及占比、各级别数量，日志占比不是请求失败率。已移除 level/top_n 参数及 top_templates 字段。`query_log_templates` 的 service 现在必填，返回 `has_more` 提醒模板截断；可提高 limit（最大 500）或缩小查询范围。`search_logs` 的 service 保持可选。具体契约见 [logs-stats.md](../obs-api/docs/logs-stats.md) 和 [logs-templates.md](../obs-api/docs/logs-templates.md)。
+
 启动后：
 
 - `http://127.0.0.1:8001/health`：应用就绪信息，不会逐个探测下游依赖。

@@ -60,29 +60,29 @@ def query_log_stats(
     start: Annotated[int | None, "开始时间（秒级 Unix 时间戳）。不传默认取 end 前 1 小时，须小于 end。"] = None,
     end: Annotated[int | None, "结束时间（秒级 Unix 时间戳）。不传默认取当前时间。"] = None,
     service: Annotated[str | None, "按服务名过滤，如 'ops-agent-backend'。不传查所有服务。"] = None,
-    level: Annotated[str | None, "按日志级别过滤，取值 DEBUG/INFO/WARN/ERROR。不传查所有级别。"] = None,
     route: Annotated[str | None, "按 HTTP 路由过滤，如 '/users'。"] = None,
     method: Annotated[str | None, "按 HTTP 方法过滤，如 GET/POST。"] = None,
-    top_n: Annotated[int | None, "返回出现次数最多的模板数量。默认 10，最大 50。"] = None,
 ) -> str:
-    """获取日志的整体统计（Level 0）。
+    """按服务返回日志统计（Level 0），不知道异常服务时先用它摸底。
 
-    **诊断时应该首先调用这个工具**，它返回错误率、各级别计数、
-    出现最多的日志模板，token 消耗最小。
-    大多数"最近有没有异常"的问题在这一步就能回答。
+    不传 service 返回窗口内有匹配日志的各服务；传 service 只返回该服务，summaries 始终是数组。
+    每项包含 service、total、error_count、error_rate、by_level；window 位于响应顶层。
+    error_rate 是该服务 ERROR 日志占比，不是请求失败率；同一次请求可能记录多条错误日志。
+    不再支持 level/top_n，不返回模板。route/method 会限制统计范围，不代表整个服务的全部日志。
+    空 summaries 不代表系统正常，也不是完整服务清单。根据 ERROR/WARN 分布选择服务后调用 query_log_templates。
     """
     return _get(
         "/logs/stats",
-        start=start, end=end, service=service, level=level,
-        route=route, method=method, top_n=top_n,
+        start=start, end=end, service=service,
+        route=route, method=method,
     )
 
 
 @tool
 def query_log_templates(
+    service: Annotated[str, "必填，目标服务名，可从 query_log_stats 的 summaries 中获取。"],
     start: Annotated[int | None, "开始时间（秒级 Unix 时间戳）。不传默认取 end 前 1 小时。"] = None,
     end: Annotated[int | None, "结束时间（秒级 Unix 时间戳）。不传默认取当前时间。"] = None,
-    service: Annotated[str | None, "按服务名过滤，如 'ops-agent-backend'。"] = None,
     level: Annotated[str | None, "按日志级别过滤，取值 DEBUG/INFO/WARN/ERROR。"] = None,
     route: Annotated[str | None, "按 HTTP 路由过滤，如 '/users'。"] = None,
     method: Annotated[str | None, "按 HTTP 方法过滤，如 GET/POST。"] = None,
@@ -90,9 +90,11 @@ def query_log_templates(
 ) -> str:
     """按模板聚合日志（Level 1）。
 
-    在 stats 发现异常后使用，可以看到每个模板的出现次数、
-    首末时间和一条代表性样例。
-    不要直接调用这个工具，应先调 query_log_stats 确认有异常。
+    限定一个服务，返回每个模板的出现次数、首末时间和最新一条代表性样例。
+    已知服务及异常线索时可以直接调用；不知道服务时先用 query_log_stats。
+    has_more=true 表示当前条件下还有未返回的模板分组，不是原始日志分页，也不提供 next_cursor。
+    可提高 limit（最大 500）、按 level/route 筛选或缩小窗口；返回模板的 count 仍统计整个匹配窗口。
+    sample 不证明该模板的其他日志均有相同原因。更多原始日志请用 search_logs。
     """
     return _get(
         "/logs/templates",
