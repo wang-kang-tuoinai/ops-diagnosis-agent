@@ -23,11 +23,11 @@ from pydantic import SecretStr
 
 from langgraph_tools import tools
 from graph_events import wrap_tool_call, awrap_tool_call
+from system_prompt import SYSTEM_PROMPT
 
 # ---- 可调参数 ----
 MODEL = "deepseek-v4-flash"
 BASE_URL = "https://api.deepseek.com"
-SYSTEM_PROMPT = "你是一个helpful的助手"
 KEEP_TURNS = 100  # 保留最近几轮完整对话
 
 
@@ -97,10 +97,11 @@ def build_app(llm, keep_turns: int = KEEP_TURNS, checkpointer=None, tool_list=No
         raise ValueError("keep_turns 必须至少为 1")
 
     def context(state):
-        messages = truncate_messages(state["messages"], keep_turns)
-        if not any(isinstance(message, SystemMessage) for message in messages):
-            messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
-        return messages
+        # 系统规则由当前部署维护。旧 CLI/checkpoint 中的 system 消息不覆盖新版规则；
+        # 仅替换本次模型输入，不修改持久化历史，保留完整 user/assistant/tool 轮次。
+        conversation = [message for message in state["messages"] if not isinstance(message, SystemMessage)]
+        messages = truncate_messages(conversation, keep_turns)
+        return [SystemMessage(content=SYSTEM_PROMPT)] + messages
 
     def call_llm(state: State, config: RunnableConfig) -> dict:
         response = llm.invoke(context(state), config=config)

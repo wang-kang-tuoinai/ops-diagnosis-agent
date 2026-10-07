@@ -3,6 +3,12 @@
 基于原有 `langgraph_agent_msgstream.py`，增加 FastAPI、SSE 和会话持久化。
 原 CLI 入口保留，HTTP 入口为 `server:app`。rag-gateway 已代理这些会话接口，前端已接入 SSE 与历史展示。
 
+## 诊断提示词
+
+正式 CLI/HTTP 诊断图共用 [system_prompt.py](system_prompt.py)，约束诊断范围、渐进下钻、事实与推断、知识库引用和工具能力边界。每次模型调用都会注入当前版本，旧会话中保存的旧 system 消息不会覆盖新版规则，历史记录保持原样。
+
+具体设计、历史抽查发现及人工回归场景见 [提示词设计说明](docs/prompt-design.md)。修改后需要重启本地进程或重建 Agent 镜像才生效。其他旧实验脚本不属于当前正式服务入口。
+
 ## Docker Compose 启动
 
 根目录 Compose 已包含 `ops-diagnosis-agent` 和独立的 `agent-mysql`。
