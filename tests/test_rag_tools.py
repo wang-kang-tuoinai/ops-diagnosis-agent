@@ -10,7 +10,7 @@ from langchain_openai.chat_models.base import _convert_message_to_dict
 from langgraph.prebuilt import ToolNode
 from langgraph.graph import END, START, MessagesState, StateGraph
 
-from langgraph_agent import build_app
+from langgraph_agent_msgstream import build_app
 from langgraph_tools import tools
 from rag_tools import RAG_API_BASE, project_knowledge, search_ops_knowledge
 

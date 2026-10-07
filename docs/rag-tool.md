@@ -1,6 +1,6 @@
 # 运维知识工具
 
-`rag_tools.py` 定义 `search_ops_knowledge`，由 `langgraph_tools.py` 注册。三个 LangGraph 入口共用该工具列表：`langgraph_agent.py`、`langgraph_agent_streaming.py` 和 `langgraph_agent_msgstream.py`。旧手写 `agent.py` 不使用此工具列表。
+`rag_tools.py` 定义 `search_ops_knowledge`，由 `langgraph_tools.py` 注册。正式入口为 `langgraph_agent_msgstream.py`，HTTP 服务与 CLI 共用该诊断图。`examples/` 下的两个 LangGraph 学习示例也复用该工具列表；手写 `examples/agent.py` 使用独立的示例 schema。
 
 ## 连接配置
 
@@ -8,7 +8,7 @@
 
 ```powershell
 $env:RAG_API_BASE = "http://localhost:8000/api/v1"
-python langgraph_agent.py
+python langgraph_agent_msgstream.py
 ```
 
 容器中应填写 Agent 可访问的 rag-service 地址，例如 `http://rag-service:8000/api/v1`。该地址与观测接口的 `OBS_API_BASE` 分开配置。
@@ -35,7 +35,7 @@ python langgraph_agent.py
 ## 验证
 
 ```powershell
-python -m unittest test_rag_tools -v
+python -m unittest tests.test_rag_tools -v
 ```
 
 测试覆盖请求校验、字段投影、完整 artifact、发送给模型的消息结构、稳定引用、并行工具调用、服务异常及 Agent 图中调用工具后继续回答的流程。图测试使用模拟 LLM，不代表真实 LLM 的选工具或诊断质量评测。

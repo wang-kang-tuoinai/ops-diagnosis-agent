@@ -1,11 +1,11 @@
-"""将 tools.py 中的工具函数包装为 langgraph 可用的工具。
+"""诊断 Agent 的工具描述、参数 schema 与注册列表。
 
 langchain 的 @tool 装饰器会自动生成工具的 JSON schema：
 - 函数 docstring        -> 工具的 description
 - 参数类型注解           -> schema 里的 type
 - Annotated[类型, "描述"] -> schema 里该参数的 description
 
-因此不需要再像 tools.py 里那样手写 tools 列表，只需给参数加上 Annotated 注解即可。
+基础工具实现位于 common_tools.py；手写 schema 的学习版本位于 examples/tools.py。
 """
 import os
 from typing import Annotated, Any
@@ -13,9 +13,9 @@ from typing import Annotated, Any
 import requests
 from langchain_core.tools import tool
 
-from tools import calculate as _calculate
-from tools import get_current_time as _get_current_time
-from tools import search_web as _search_web
+from common_tools import calculate as _calculate
+from common_tools import get_current_time as _get_current_time
+from common_tools import search_web as _search_web
 from rag_tools import search_ops_knowledge
 
 # obs-api 基础地址，可通过环境变量 OBS_API_BASE 覆盖

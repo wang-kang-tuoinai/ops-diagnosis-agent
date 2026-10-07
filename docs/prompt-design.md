@@ -1,6 +1,6 @@
 # 诊断提示词与回归方法
 
-正式入口 `langgraph_agent_msgstream.py` 从 `system_prompt.py` 导入 SYSTEM_PROMPT，HTTP 后端也使用同一诊断图。其他旧实验脚本暂不迁移，不是当前服务端入口。
+正式入口 `langgraph_agent_msgstream.py` 从 `system_prompt.py` 导入 SYSTEM_PROMPT，HTTP 后端也使用同一诊断图。学习示例位于 `examples/`，不作为当前服务端入口。
 
 ## 本次依据
 
@@ -38,7 +38,7 @@ docker compose up -d --build --no-deps ops-diagnosis-agent
 
 ```powershell
 # 在 ops-diagnosis-agent 目录
-.\.venv\Scripts\python.exe -m unittest test_system_prompt test_backend test_log_tools test_trace_tools test_rag_tools -q
+.\.venv\Scripts\python.exe -m unittest tests.test_system_prompt tests.test_backend tests.test_log_tools tests.test_trace_tools tests.test_rag_tools -q
 ```
 
 新增测试覆盖同步、异步模型输入、旧 checkpoint 的系统规则更新、不改写持久化历史及工具消息配对。模拟工具返回中含指令文本时，验证它仍作为 ToolMessage 传入；这不证明真实模型能在所有情况下抵御提示注入。

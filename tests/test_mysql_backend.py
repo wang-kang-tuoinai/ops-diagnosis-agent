@@ -16,7 +16,7 @@ from conversation_store import MySQLConversationStore, RunConflict
 from diagnosis_runtime import DiagnosisManager
 from langgraph_agent_msgstream import build_app
 from server import Settings, create_app
-from test_backend import FakeChat, inspect_dependency, parse_sse
+from tests.test_backend import FakeChat, inspect_dependency, parse_sse
 
 
 @unittest.skipUnless(os.getenv('AGENT_TEST_MYSQL') == '1', '设置 AGENT_TEST_MYSQL=1 才运行真实 MySQL 测试')

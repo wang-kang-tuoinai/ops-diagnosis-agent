@@ -15,5 +15,7 @@ data/
 .ruff_cache/
 .vscode/
 .idea/
-test_*.py
+tests/
+examples/
+docs/
 README.md

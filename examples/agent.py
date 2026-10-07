@@ -9,7 +9,7 @@ from openai.types.chat import (
     ChatCompletionMessageParam,
 )
 
-from tools import available_functions, tools
+from examples.tools import available_functions, tools
 
 # ---- 可调参数 ----
 MODEL = "deepseek-v4-flash"
