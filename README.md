@@ -52,13 +52,9 @@ HTTP 与正式 CLI 共用诊断图和提示词。模型适配位于 `deepseek_ch
 | `search_traces` | 按入口 operation、状态、耗时搜索调用摘要 |
 | `get_trace_detail` | 查看单次 Trace 的 Span 树、错误及耗时 |
 | `search_ops_knowledge` | 检索架构、排查手册和技术资料，返回 `[K-...]` 引用 |
-| `calculate` | 四则运算 |
 | `get_current_time` | 获取运行进程所在环境的本地时间 |
-| `search_web` | Tavily 联网检索，需要额外配置 `TAVILY_API_KEY` |
 
 Trace stats/search 默认查询 `TRACE_ENTRY_SERVICE`，可以传 service 覆盖；分析范围是指定服务的 server 入口及其后代，不包含上游和旁支。日志 ERROR 占比不是请求失败率，代表性错误也不等于已确认根因。Agent 必须保留工具返回的数据缺失、截断和查询失败提示。
-
-根 Compose 默认没有传入 `TAVILY_API_KEY`。未配置时联网搜索返回失败信息，不影响服务启动；诊断主要依赖观测工具与知识库。启用联网检索时需自行向容器注入该变量。
 
 ## 启动
 
@@ -136,7 +132,6 @@ $env:RAG_API_BASE = "http://127.0.0.1:8000/api/v1"
 | `OBS_API_BASE` | `http://localhost:8082/api/v1` | `http://obs-api:8081/api/v1` |
 | `TRACE_ENTRY_SERVICE` | `ops-agent-backend` | 默认 `ops-agent-backend` |
 | `RAG_API_BASE` | `http://localhost:8000/api/v1` | `http://rag-service:8000/api/v1` |
-| `TAVILY_API_KEY` | 无，联网搜索可选 | 当前未注入 |
 
 `AGENT_KEEP_TURNS` 控制 HTTP 服务每次模型调用保留的最近用户轮次，包含当前问题。正式 CLI 使用代码中的 `KEEP_TURNS`（当前为 100）。裁剪保留完整工具调用/返回配对，只影响模型输入，不删除历史或缩减已经持久化的图状态。
 

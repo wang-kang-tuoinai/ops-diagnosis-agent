@@ -9,7 +9,7 @@
 | `langgraph_agent.py` | 基础 LangGraph 循环示例 |
 | `langgraph_agent_streaming.py` | 在节点内处理流式输出的早期示例 |
 
-基础工具函数统一复用根目录 `common_tools.py`。两个 LangGraph 示例仍使用当前 `langgraph_tools.py` 工具列表，因此运行观测/知识工具也需要配置相应服务；示例保留原来的图与提示词，不等同于正式诊断行为。
+手写示例目前仅注册时间工具，复用根目录 `common_tools.py`。两个 LangGraph 示例仍使用当前 `langgraph_tools.py` 工具列表，因此运行观测/知识工具也需要配置相应服务；示例保留原来的图与提示词，不等同于正式诊断行为。
 
 在 **ops-diagnosis-agent 根目录**安装项目依赖并设置 `DEEPSEEK_API_KEY` 后，以模块方式运行：
 
@@ -19,7 +19,7 @@
 .\.venv\Scripts\python.exe -m examples.langgraph_agent_streaming
 ```
 
-三条命令分别启动交互示例，按需要选择其中一条。使用联网搜索还需 `TAVILY_API_KEY`。请从仓库根目录使用 `-m`，不要直接运行子目录脚本，以保证共用模块能够正确导入。
+三条命令分别启动交互示例，按需要选择其中一条。请从仓库根目录使用 `-m`，不要直接运行子目录脚本，以保证共用模块能够正确导入。
 
 正式诊断 CLI 运行方式：
 

@@ -13,9 +13,7 @@ from typing import Annotated, Any
 import requests
 from langchain_core.tools import tool
 
-from common_tools import calculate as _calculate
 from common_tools import get_current_time as _get_current_time
-from common_tools import search_web as _search_web
 from rag_tools import search_ops_knowledge
 
 # obs-api 基础地址，可通过环境变量 OBS_API_BASE 覆盖
@@ -30,23 +28,6 @@ def _get(endpoint: str, **params: Any) -> str:
     if resp.status_code >= 400:
         return f"请求失败（HTTP {resp.status_code}）：{resp.text}"
     return resp.text
-
-
-@tool
-def search_web(query: Annotated[str, "需要搜索的关键词"]) -> str:
-    """当遇到不知道的实时信息、新闻，或需要查阅最新资料时，调用此工具进行联网搜索。"""
-    return _search_web(query)
-
-
-@tool
-def calculate(
-    expression: Annotated[
-        str,
-        "要计算的数学表达式，例如 '(3 + 5) * 2 / 4'，只能包含数字、加减乘除运算符和括号。",
-    ]
-) -> str:
-    """安全的四则运算计算器。当用户需要计算加法(+)、减法(-)、乘法(*)、除法(/)的数学表达式时调用。支持括号和小数，不支持幂运算、三角函数等高级运算。"""
-    return _calculate(expression)
 
 
 @tool
@@ -230,4 +211,4 @@ def get_trace_detail(
 
 
 # langgraph / langchain 直接使用这个工具列表
-tools = [search_web, calculate, get_current_time, query_log_stats, query_log_templates, search_logs, query_trace_stats, search_traces, get_trace_detail, search_ops_knowledge]
+tools = [get_current_time, query_log_stats, query_log_templates, search_logs, query_trace_stats, search_traces, get_trace_detail, search_ops_knowledge]
